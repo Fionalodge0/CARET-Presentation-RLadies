@@ -1,0 +1,401 @@
+---
+title: "Introduction to `caret`"
+author: "Fiona R Lodge"
+date: "4/22/2019"
+output:
+  powerpoint_presentation: default
+  slidy_presentation: default
+  ioslides_presentation: default
+---
+
+```{r setup, include=FALSE}
+library(rmarkdown)
+knitr::opts_chunk$set(echo = FALSE)
+memory.limit(size = 10000000000)
+```
+## What Caret is
+
+The R package, ``caret`` is a predictive modeling package created by Max Kuhn.  The ``caret`` stands for Classification And REgression Training. The functions in the ``caret`` package focus on the following main aspects of model devlopment:
+
+- data splitting
+- pre-processing
+- feature selection
+- model tuning using resampling
+- variable importance estimation
+
+(Kuhn, 2019)
+
+## Why Caret
+
+Model functions in R vary in syntax, validation methodology, and tuning parameters.  Observe the examples below of a `randomForest` and `gbm` model        
+
+Having to work through all of these differences can significantly slow down the modeling process.  The ``caret`` package streamlines the process in many ways, below are some of my personal observations.
+
+- Pre-processing, resampling, and tuning all have their own specific functions.  This allows you to more readily change and move through this part of the process.
+- The Pre-processing functions are very helpful in making sure your training set is ready to go for model development.  
+- There are a lot of tagged models available, and you should be able to run at least a few different ones for any given problem. 
+- The functionality in this package is very deep, and there are a variety of ways to tune the models that you build.  
+
+
+## Other Benefits to Caret
+
+- `caret`'s error messages are helpful.  I actually learned a few things about the modeling process from them.
+- `caret` will ask you to install package dependencies, instead of stopping its processes and asking you to start over.  This also means that you only need to load `caret` to be able to access a ton of different modeling libraries! 
+- `caret` currently has access to tagged models that will work with its `method` function.  However, there is a way to use other models not included in the tagged model list.
+- It is easy to locate and find tuning parameters in ``caret``.
+- The `caret` package contains some helpful datasets to practice on.
+- Similar to python's sci-kit learn in that it uses a uniform interface. In my opinion, `caret` appears more statistical in nature.
+
+
+## The Generated Dataset
+
+- I generated a dataset in Python using the make_classification command in sci-kit learn.  The dataset has no meaning.  
+-- X2, y2 = make_classification(500, n_features= 5, n_informative = 3, n_redundant = 0, n_classes = 3, weights = [0.6, 0.3, 0.1])
+- After this, in Excel, I manually added some problems, in order to demonstrate the power of `caret`’s pre-processing methods.  Below is the head of the dataset:
+```{r form_dat, include=FALSE}
+library(`caret`)
+library(tidyverse)
+library(gridExtra)
+
+set.seed(809)
+
+X <- read.csv("C://Users//Owner//Documents//GitHub//CARET-Presentation-RLadies//X5.csv")
+y <- read.csv("C://Users//Owner//Documents//GitHub//CARET-Presentation-RLadies//y5.csv")
+
+y <- 
+  y %>%
+  mutate(X0 = 
+           recode(X0, 
+            '0' = 'A',
+            '1' = 'B', 
+            '2' = 'C')) %>% 
+  mutate(X0 = as.factor(X0)) %>%
+  select('y' = 'X0')
+
+dat <- cbind.data.frame(X, y)
+
+```
+
+```{r head.dat}
+head(dat)
+```
+
+## Data Splitting 
+
+The data splitting function, `CreateDataPartition`, creates a list(or matrix) of indices for your training data.  Below is a sample command for the dataset that use 75% of its data for training.  
+
+```{r createpartition}
+set.seed(809)
+# Data splitting
+trainindex <- 
+  createDataPartition(dat$y, # response always goes here
+                      p = 0.75, # fraction to put into training set
+                      list = FALSE) 
+train.x <- dat[trainindex, -which(names(dat) %in% c('y'))]        
+train.y <- dat[trainindex, 'y']
+test.x <- dat[-trainindex, -which(names(dat) %in% c('y'))]
+test.y <- dat[-trainindex, 'y']
+
+# Training, resampling, preprocessing
+gbm.fit <- train(x = train.x,
+                 y = train.y, 
+                 trControl = ctrl.rpcv, #our repeated cv method
+                 method = 'gbm',
+                 preProcess = c('knnImpute'), 
+                 verbose = FALSE, 
+                 # This will keep gbm from printing a tome
+                 metric = 'Accuracy')
+```
+
+Some imputation methods require the format of `x = x` and `y = y`, so that is what I have chosen here, but this may not always be necessary.
+
+```{r separate_into_train_test}
+train.x <- dat[trainindex, -which(names(dat) %in% c('y'))]        
+train.y <- dat[trainindex, 'y']
+test.x <- dat[-trainindex, -which(names(dat) %in% c('y'))]
+test.y <- dat[-trainindex, 'y']
+```
+
+## Data Splitting
+The `createDataPartition` command uses stratified (proportional) random sampling.  The plots below compare this method to using the `sample` method in R.  This sampling method is preferred (especially in classification problems).
+
+```{r sampling,include=FALSE}
+# Plot of non-stratified
+n <- nrow(train.x)
+samples <- matrix(sample(dat$y, n*4, replace = TRUE), n, 4)
+samples.plot <- 
+  samples %>%
+  as_tibble() %>%
+  select('A' = 'V1', 'B' = 'V2') %>%
+  gather() %>%
+  ggplot(., aes(x = value, fill = key)) + 
+  geom_bar(position = 'dodge')+
+  ggtitle('Simple Random Sampling') + 
+  theme(legend.position="none") + 
+  xlab("response") + 
+  scale_fill_brewer(palette = 'Set2')
+
+# Plot of stratified
+trainIndex <- createDataPartition(dat$y, times = 2, p = 0.75)
+samples.caret <- cbind.data.frame(dat$y[trainIndex[[1]]],
+                                  dat$y[trainIndex[[2]]])
+caret.plot <- 
+  samples.caret %>%
+  gather() %>%
+  ggplot(., aes(x = value, fill = key)) + 
+  geom_bar(position = 'dodge') + 
+  ggtitle('Stratified Random Sampling')+
+  theme(legend.position="none") + 
+  xlab("response")+
+  scale_fill_brewer(palette = 'Set2')
+```
+
+```{r display_plot}
+grid.arrange(samples.plot, caret.plot, ncol = 2)
+```
+
+## Pre-processing the training/test data with PreProcess
+
+The `preProcess` function has many abilities.  This includes data transformation, imputation, and even predictor removal.  The function itself is descriptive in nature, while `predict.preProcess` will produce the new dataframe.  The example below is not used for training, as `preProcess` is also available in the `train` function, which will be covered later.  
+
+```{r preprocess_example}
+preproc <- preProcess(train.x, c('knnImpute'))                    
+preproc
+
+transformed <- predict(preproc, train.x) # This creates a new dataframe
+```
+
+## Pre-processing to locate Linear Dependencies
+
+``caret`` has a variety of functions available to assess the quality of your data.  For example, if a dataset contains linear combinations of predictors, this can cause misleading results in modeling (in short, repetitive information).  See the quick example below, where city and zip are often represented by the same vector. `findLinearCombos` will provide you with a recommendation of columns to remove.    
+
+```{r }
+data("Sacramento")
+head(Sacramento)
+lincombs <- findLinearCombos(model.matrix(price ~., data = Sacramento))
+lincombs$remove # recommended columns to remove
+```
+
+## Your Turn: Explore the preprocessing technique of nearZeroVar
+
+1. Install and load `caret`. Look up ?nearZeroVar.  
+2. Load the dataset German credit with `data("GermanCredit")`.  The response variable is `Class`.
+3. Split the data into a train/test split with `createDataPartition`.  
+4. Explore the proportional distribution of the predictors in the training set using the `nearZeroVar` command.  Note that this could also be done with the `preProcess` command with `method = nzv`.
+
+```{r nzv, include = FALSE}
+data("GermanCredit")
+
+idx <- createDataPartition(GermanCredit$Class, p = 0.75, list = FALSE)
+
+train.GC <- GermanCredit[idx,]
+test.GC <- GermanCredit[-idx,]
+
+nearZeroVar(train.GC[ , -which(names(train.GC) %in% c("Class"))])
+
+preProcess(train.GC[ , -which(names(train.GC) %in% c("Class"))], "nzv")
+
+```
+
+## Other Preprocessing techniques
+
+`caret` has quite a few other preprocessing techniques available:
+
+- The `dummyVars` function creates dummy variables, R seems to have a few different formulas to create model matrix type data, I would recommend reading before you go!
+- The plethora of available methods in `preProcess`:
+-- 	`BoxCox`, `YeoJohnson`, `expoTrans`, `center`, `scale`, `range`, `knnImpute`, `bagImpute`, `medianImpute`, `pca`, `ica`, `spatialSign`, `corr`, `zv`, `nzv`, and `conditionalX` 
+
+## Setup Training Parameters
+
+Training parameters and resampling procedures are set up in the `trainControl` function.  Below are some of the more well known methods.  
+
+```{r trcontrol}
+ctrl.none <- trainControl(method = 'none') # fits model to training set without resampling
+ctrl.cv <- trainControl(method = 'cv', number = 10) # 10-fold cross validation
+ctrl.rpcv <- trainControl(method = 'repeatedcv', number = 10, repeats = 10) #  10-pete of 10-fold cv 
+ctrl.oob <- trainControl(method = 'oob') # Out of bag sample
+```
+
+## The gbm model and its tuning parameters
+
+The `gbm` model is a stochastic gradient boosting model that attempts to minimize a loss function to a certain distribution.  
+
+```{r modelinfo}
+modelLookup('gbm')[, 1:3] # Nice way to extract tuning parameters
+```
+
+## A First Look at Train
+
+The `train` function is the heart of `caret`, and this is where everything comes together (pre-processing, training parameters, and )  
+
+```{r first_train}
+gbm.fit <- train(x = train.x,
+                 y = train.y, 
+                 trControl = ctrl.rpcv, #our repeated cv method
+                 method = 'gbm',
+                 preProcess = c('knnImpute'), 
+                 verbose = FALSE, 
+                 # This will keep gbm from printing a tome
+                 metric = 'Accuracy')
+gbm.fit
+```
+
+## Your Turn with Train
+
+We will run a random forest model on the popular Iris dataset.  The `method = rf` is actually the default in `train`.  The only tuning parameter in the randomforest tagged model is `mtry`, which is the number of randomly selected predictors.  
+
+1. Below is a reminder of how to set up a train/test set, but feel free to do your own!  
+
+```{r iris_load}
+data("iris")
+
+idx <- createDataPartition(iris$Species, p = 0.8, list = FALSE)
+
+trn.x <- iris[idx, -which(names(iris) %in% c("Species"))]
+trn.y = iris[idx, c("Species")]
+tst.x <- iris[-idx, -which(names(iris) %in% c("Species"))]
+tst.y <- iris[-idx, c("Species")]
+```
+
+2. Set up a 5-fold cross validation method, center and scale the data, and train a randomforest model.  
+
+
+## Training with Customized Grid
+
+You can set up a customized grid that sets up your own tuning parameters in the `tuneGrid` section of the `train` command. 
+
+
+```{r training_with_customized_grid}
+
+gbmGrid <-  expand.grid(interaction.depth = c(1:5), 
+                        n.trees = (1:25)*20, 
+                        shrinkage = 0.01,
+                        n.minobsinnode = 10)
+
+gbm.fit.grid <- train(x = train.x, 
+                      y =  train.y, 
+                       trControl = ctrl.rpcv,
+                       method = 'gbm',
+                       preProcess = c('knnImpute'),
+                       verbose = FALSE,
+                       tuneGrid = gbmGrid) # Include your grid here. 
+
+```
+
+Note that there is one more way to train -- by using a random search, `search = random`, and setting the `tuneLength`.
+
+## Tools for working with the train results
+
+The results across tuning parameters are available for plotting.  
+
+```{r plot.gbm}
+plot(gbm.fit.grid)
+```
+
+## Tools for working with the train results
+
+The default is for `caret` to determine the best model by the metric determined, and there are a variety of ways to view these results.    
+
+
+```{r final_model}
+gbm.fit.grid$bestTune 
+# Gives optimimzed tuning parameters
+gbm.fit.grid$finalModel 
+# Final model object, note this will not preprocess the test data if used for predictions
+gbm.fit.grid$results 
+# This dataframe contains all results and is useful for choosing a model based on a different statistical measure.
+```
+
+## Getting predictions from your model
+
+The function, `predict.train` can be used to extract predictions from the optimized model. 
+
+
+```{r preds}
+preds <- predict(gbm.fit.grid, test.x)
+table(preds, test.y)
+```
+
+```{r sum}
+sum(diag(table(preds, test.y)))/length(test.y)
+```
+`caret` has an additional function, `extractPrediction` which will output a dataframe full of information concerning your predictions (`obs, pred, model, object, dataType`). Note that this function can also be applied to a list of different models.
+
+## Confusion Matrix
+
+Accuracy is not the only metric to analyze a model with.  The `confusionMatrix` command provides several other associated statistics. 
+
+
+```{r confmatrix}
+confusionMatrix(data = preds, reference = test.y)
+```
+
+
+## Practice with the IRIS model
+
+1. Plot the results of the random forest model.  If you want to try a different tuning method, feel free! 
+2. Build predictions on the test set.
+3. Print a confusion matrix.
+
+## Sampling methods to deal with Response class imbalance
+
+The distribution of the response class in my dataset is unbalanced, which can affect the results of model training. 
+
+```{r imbalance}
+table(train.y)
+g <- ggplot(dat, aes(x = y)) + geom_bar()
+```
+
+There are a variety of rebalancing methods in ``caret`` to handle this, and we will try upsampling.  In essence, this randomly samples from the unbalanced classes until we reach equal proportions.  Note, that this should only be done on the training set, not on the test set, which should be left pure.
+
+
+```{r upsample}
+up_train <- upSample(x = train.x,
+                     y = train.y) 
+
+up_train %>% count(Class)
+
+```
+
+
+## Training on the Upsampled Data
+
+This might (or not) improve a fit, but let's try, and compare it to our original `gbm.fit` object. 
+
+```{r upsample.train}
+
+train.up <- train(x = up_train[, -ncol(up_train)], 
+                  y = up_train[,  ncol(up_train)], 
+                  trControl = ctrl.rpcv,
+                  method = 'gbm',
+                  preProcess = c('knnImpute'), 
+                  verbose = FALSE, 
+                  # This will keep gbm from printing stuff
+                  metric = 'Accuracy')
+```
+
+It appears that this has slightly improved our accuracy.
+
+```{r two_results}
+#Note, you will want to rename these in your list
+model.list <- list('original.fit' = gbm.fit, 
+                   'upsampled.fit' = train.up) 
+
+preds.compare <- extractPrediction(model.list, 
+                                   testX = test.x, 
+                                   testY = test.y)
+preds.compare %>%
+  filter(dataType == 'Test')%>%
+  group_by(object) %>%
+  mutate(accuracy = if_else(obs == pred, 1, 0)) %>%
+  summarise(per.accurate = sum(accuracy)/n())
+```
+
+## Going Further with Caret
+
+- Several feature selection tools available. For the `gbm` model we could have used recursive feature selection.
+- Tools available for analysis of classification problems with two classes. 
+- A variety of visualization tools available, specifically geared towards analysis of EDA required for the modeling processes.  
+- The ability to create recipes in train for customized pre-processing methods.  
+- And....so much more...we only made it through chapter 5 and a bit more of the ``caret`` vignette. 
+
